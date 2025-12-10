@@ -19,12 +19,21 @@ Resources:
         - arm64
       Layers:
         - arn:aws:lambda:us-west-2:336392948345:layer:AWSSDKPandas-Python312-Arm64:20
+      Policies:
+      - Statement:
+          Effect: Allow
+          Action: ses:SendEmail
+          Resource: "*"
       Events:
         SmartsheetWebhook:
           Type: HttpApi
           Properties:
             Path: /webhook
             Method: post
+      Environment:
+        Variables:
+          SENDER: "miya.reese01@gmail.com"        # Must match SES identity above
+          RECIPIENT: "shelterconnect@betterangels.la"  # Replace with a verified recipient if in sandbox
 
 Outputs:
   WebhookEndpoint:
