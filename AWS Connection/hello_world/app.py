@@ -65,8 +65,8 @@ def lambda_handler(event, context):
             matches_df.to_excel(writer, index=False, sheet_name="matches")
 
         buffer.seek(0)
-        #encoded = base64.b64encode(buffer.read()).decode("utf-8")
         excel_bytes = buffer.read()
+        encoded = base64.b64encode(excel_bytes).decode("utf-8")
         send_email(excel_bytes, file_name)
 
         print(f"Returning Excel file: {file_name}, rows={len(matches_df)}")
