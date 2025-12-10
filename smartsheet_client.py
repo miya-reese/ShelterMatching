@@ -1,5 +1,5 @@
 import smartsheet
-from datetime import date
+from datetime import date, datetime
 from typing import Dict, Any, List
 
 from config import SMARTSHEET_ACCESS_TOKEN, SMARTSHEET_CONFIG
@@ -96,24 +96,29 @@ def normalize_bed_row(row: Dict[str, Any]) -> Dict[str, Any]:
     Assumes ShelterID in Smartsheet is like SHELTER-001 (you just fixed it).
     If you ever get SHELTER_001 style again, you can .replace("_", "-").
     """
-    raw_id = row.get("ShelterID")
+    raw_id = row.get("shelter_id")
     if raw_id is None:
         shelter_uid = None
     else:
         # In case future data uses underscores, normalize anyway:
         shelter_uid = str(raw_id).replace("_", "-")
 
-    beds = row.get("BedsAvailable")
+    beds = row.get("all_beds")
     try:
         beds_available = int(beds) if beds is not None else 0
     except (TypeError, ValueError):
         beds_available = 0
 
-    date_str = row.get("Date")
+    date_str = row.get("creation")
     parsed_date = None
+    
     if date_str:
         try:
-            parsed_date = date.fromisoformat(date_str)
+            d = date_str
+            if d.endswith("Z"):
+                d = date_str.replace("Z", "+00:00")
+            parsed_date = datetime.fromisoformat(d)
+            parsed_date = parsed_date.replace(tzinfo=None)
         except ValueError:
             parsed_date = None
 
@@ -150,7 +155,7 @@ def get_latest_beds_by_shelter() -> Dict[str, Dict[str, Any]]:
         d = row["date"]
         if uid is None or d is None:
             continue
-
+        
         if uid not in latest or d > latest[uid]["date"]:
             latest[uid] = {
                 "date": d,
