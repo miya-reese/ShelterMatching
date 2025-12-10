@@ -119,33 +119,46 @@ def normalize_referrals_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     df = pd.DataFrame()
 
     # Basic identity
-    df["ref_row_id"] = raw_df.get("Row ID")
-    df["ref_first_name"] = raw_df.get("First Name")
-    df["ref_last_name"] = raw_df.get("Last Name")
+    df["ref_row_id"] = raw_df.get("uid")
+    df["ref_first_name"] = raw_df.get("first_name")
+    df["ref_last_name"] = raw_df.get("last_name")
 
     # Demographics
-    df["ref_age"] = raw_df.get("Age")
-    df["ref_gender_identity"] = raw_df.get("Gender Identity")
-    df["ref_gender_bed_pref"] = raw_df.get("Gender Bed Preference")
+    df["ref_age"] = raw_df.get("age")
+    df["ref_gender_identity"] = raw_df.get("gender_identity")
+    df["ref_gender_bed_pref"] = raw_df.get("gender_bed_preference")
 
     # Location / SPA
-    loc_col = raw_df.get("Current Location")
+    loc_col = raw_df.get("current_stay")
     df["ref_current_location"] = loc_col
     if loc_col is not None:
         df["ref_spa"] = loc_col.apply(_extract_spa_from_location)
     else:
         df["ref_spa"] = None
+    df["ref_preferred_spa"] = raw_df.get("preferred_spa")
+    df["ref_preferred_city"] = raw_df.get("preferred_city_name")
+    df["ref_exclude_spa"] = raw_df.get("exclude_spa")
+    df["ref_exclude_city_name"] = raw_df.get("exclude_city_name")
+    df["ref_skid_row"] = raw_df.get("skid_row")
 
     # Vehicle
-    df["ref_vehicle"] = raw_df.get("Vehicle (Y/N)")
+    df["ref_vehicle"] = raw_df.get("vehicle")
+    df["ref_vehicle_info"] = raw_df.get("vehicle_info")
 
     # Animals – collapse multiple Y/N fields into a single boolean
     animal_cols = [
-        "Household Animals (Y/N)",
-        "Service Animal (Y/N)",
-        "Emotional Support Animal (Y/N)",
-        "Animal is Pet (Y/N)",
+        "animals",
+        "service_animal",
+        "emotional_supportemotional_support_animal",
+        "pet",
     ]
+
+    # health
+    df["ref_health"] = raw_df.get("health_concerns")
+    df["ref_accessibility"] = raw_df.get("accessibility")
+    df["ref_room_type"] = raw_df.get("congregate_environment")
+    df["ref_top_bunk"] = raw_df.get("top_bunk")
+
 
     def _has_any_animal(row: pd.Series) -> bool:
         for col in animal_cols:
@@ -157,7 +170,7 @@ def normalize_referrals_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     df["ref_has_any_animal"] = raw_df.apply(_has_any_animal, axis=1)
 
     # Presenting issues
-    df["ref_presenting_issues"] = raw_df.get("Presenting Issues")
+    df["ref_presenting_issues"] = raw_df.get("special_situations")
 
     return df
 
@@ -171,8 +184,8 @@ def normalize_shelters_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     """
     df = pd.DataFrame()
 
-    df["shelter_uid"] = raw_df.get("uid")
-    df["shelter_name"] = raw_df.get("name")
+    df["shelter_uid"] = raw_df.get("shelter_id")
+    df["shelter_name"] = raw_df.get("shelter_name")
 
     # SPA + cities
     spa_col = raw_df.get("spa")
@@ -183,10 +196,21 @@ def normalize_shelters_df(raw_df: pd.DataFrame) -> pd.DataFrame:
     df["shelter_cities"] = raw_df.get("cities")
 
     # Pets / demographics / programs / entry requirements
-    df["shelter_pets"] = raw_df.get("pets")
-    df["shelter_demographics"] = raw_df.get("demographics")
-    df["shelter_programs"] = raw_df.get("shelter_programs")
+    df["shelter_age"] = raw_df.get("age_group") 
+    df["shelter_gender"] = raw_df.get("gender")
+    #df["shelter_sexual_orientation"] = raw_df.get("sexual_orientation")
+    #df["shelter_programs"] = raw_df.get("shelter_programs")
     df["shelter_entry_requirements"] = raw_df.get("entry_requirements")
+    df["shelter_special_situation_restrictions"] = raw_df.get("special_situation_restrictions")
+    df["shelter_accessibility"] = raw_df.get("accessibility")
+    df["shelter_health_services"] = raw_df.get("health_services")
+    df["shelter_room_style"] = raw_df.get("room_style")
+    df["shelter_storage"] = raw_df.get("storage")
+    df["shelter_pets"] = raw_df.get("pets")
+    df["shelter_meals"] = raw_df.get("meals")
+    df["shelter_parking"] = raw_df.get("parking")
+    df["shelter_vehicles"] = raw_df.get("vehicles")
+    df["shelter_criminal_history"] = raw_df.get("criminal_history")
 
     # Contact info
     df["shelter_email"] = raw_df.get("email")
@@ -229,13 +253,14 @@ def is_exact_match(
         return False
 
     # ---------- 2. SPA match (strict) ----------
-    ref_spa = _to_int_or_none(ref_row.get("ref_spa"))
-    shelter_spa = _to_int_or_none(shelter_row.get("shelter_spa"))
+
+    ref_exclude_spa = _split_tags(ref_row.get("ref_exclude_spa"))
+    shelter_spa = shelter_row.get("shelter_spa")
 
     # For strict matching: if we know the referral SPA, the shelter MUST
     # have a SPA and it MUST match.
-    if ref_spa is not None:
-        if shelter_spa is None or shelter_spa != ref_spa:
+    if ref_exclude_spa != []:
+        if shelter_spa is None or shelter_spa in ref_exclude_spa:
             return False
 
     # ---------- 3. Pets compatibility ----------
@@ -283,9 +308,14 @@ def is_exact_match(
 
     shelter_demo_tags = _split_tags(shelter_row.get("shelter_demographics"))
 
+    shelter_age = _split_tags(shelter_row.get("age_group"))
+    shelter_gender = _split_tags(shelter_row.get("shelter_gender"))
+
     # Treat empty demographics as "all" (inclusive) so we don't over-exclude.
-    if not shelter_demo_tags:
-        shelter_demo_tags = ["all"]
+    if not shelter_age:
+        shelter_age = ["all"]
+    if not shelter_gender:
+        shelter_gender = ["all"]
 
     # Helper: does this shelter serve families / parents at all?
     def _serves_families(tags: list[str]) -> bool:
@@ -294,8 +324,8 @@ def is_exact_match(
 
     # If demographics are clearly TAY or seniors focused, allow any gender.
     # Age logic (step 6) will further restrict.
-    is_tay_focused = "tay_teen" in shelter_demo_tags
-    is_senior_focused = "seniors" in shelter_demo_tags
+    is_tay_focused = "tay_teen" in shelter_age
+    is_senior_focused = "seniors" in shelter_age
 
     if gender_source and not (is_tay_focused or is_senior_focused):
         # Basic male/female inference from text.
@@ -305,19 +335,19 @@ def is_exact_match(
         if is_male_pref:
             # Require 'single_men' OR 'all' OR families
             if (
-                "single_men" not in shelter_demo_tags
-                and "all" not in shelter_demo_tags
-                and not _serves_families(shelter_demo_tags)
+                "single_men" not in shelter_gender
+                and "all" not in shelter_gender
+                and not _serves_families(shelter_gender)
             ):
                 return False
 
         if is_female_pref:
             # Require 'single_women' OR 'single_moms' OR 'families' OR 'all'
             if (
-                "single_women" not in shelter_demo_tags
-                and "single_moms" not in shelter_demo_tags
-                and "all" not in shelter_demo_tags
-                and not _serves_families(shelter_demo_tags)
+                "single_women" not in shelter_gender
+                and "single_moms" not in shelter_gender
+                and "all" not in shelter_gender
+                and not _serves_families(shelter_gender)
             ):
                 return False
 
@@ -326,12 +356,12 @@ def is_exact_match(
 
     if age is not None:
         # Seniors-only: only if the *only* tag is seniors
-        is_seniors_only = shelter_demo_tags == ["seniors"]
+        is_seniors_only = shelter_age == ["seniors"]
         if is_seniors_only and age < 55:
             return False
 
         # TAY-only: only if the *only* tag is tay_teen
-        is_tay_only = shelter_demo_tags == ["tay_teen"]
+        is_tay_only = shelter_age == ["tay_teen"]
         if is_tay_only and age > 24:
             return False
 
@@ -361,13 +391,13 @@ def debug_exact_match(
         return False, "no beds available"
 
     # 2. SPA
-    ref_spa = _to_int_or_none(ref_row.get("ref_spa"))
+    ref_exclude_spa = _to_int_or_none(ref_row.get("ref_exclude_spa"))
     shelter_spa = _to_int_or_none(shelter_row.get("shelter_spa"))
-    if ref_spa is not None:
+    if ref_exclude_spa is not None:
         if shelter_spa is None:
             return False, "shelter SPA missing"
-        if shelter_spa != ref_spa:
-            return False, f"SPA mismatch (ref {ref_spa} vs shelter {shelter_spa})"
+        if shelter_spa == ref_exclude_spa:
+            return False, f"SPA mismatch (ref exclude spa {ref_exclude_spa} vs shelter {shelter_spa})"
 
     # 3. Pets
     has_animal = _to_bool(ref_row.get("ref_has_any_animal"))
@@ -405,6 +435,11 @@ def debug_exact_match(
     if (not gender_source) or ("no preference" in gender_source):
         gender_source = gender_identity_raw
 
+    if not shelter_age:
+        shelter_age = ["all"]
+    if not shelter_gender:
+        shelter_gender = ["all"]
+
     shelter_demo_tags = _split_tags(shelter_row.get("shelter_demographics"))
     if not shelter_demo_tags:
         shelter_demo_tags = ["all"]
@@ -413,8 +448,8 @@ def debug_exact_match(
         family_like = {"families", "single_moms", "single_parents"}
         return any(t in family_like for t in tags)
 
-    is_tay_focused = "tay_teen" in shelter_demo_tags
-    is_senior_focused = "seniors" in shelter_demo_tags
+    is_tay_focused = "tay_teen" in shelter_age
+    is_senior_focused = "seniors" in shelter_age
 
     if gender_source and not (is_tay_focused or is_senior_focused):
         is_male_pref = any(kw in gender_source for kw in ["male", "man", "boy"])
@@ -422,29 +457,29 @@ def debug_exact_match(
 
         if is_male_pref:
             if (
-                "single_men" not in shelter_demo_tags
-                and "all" not in shelter_demo_tags
-                and not _serves_families(shelter_demo_tags)
+                "single_men" not in shelter_gender
+                and "all" not in shelter_gender
+                and not _serves_families(shelter_gender)
             ):
-                return False, f"gender mismatch (male) vs {shelter_demo_tags}"
+                return False, f"gender mismatch (male) vs {shelter_gender}"
 
         if is_female_pref:
             if (
-                "single_women" not in shelter_demo_tags
-                and "single_moms" not in shelter_demo_tags
-                and "all" not in shelter_demo_tags
-                and not _serves_families(shelter_demo_tags)
+                "single_women" not in shelter_gender
+                and "single_moms" not in shelter_gender
+                and "all" not in shelter_gender
+                and not _serves_families(shelter_gender)
             ):
-                return False, f"gender mismatch (female) vs {shelter_demo_tags}"
+                return False, f"gender mismatch (female) vs {shelter_gender}"
 
     # 6. Age / TAY / seniors
     age = _to_int_or_none(ref_row.get("ref_age"))
     if age is not None:
-        is_seniors_only = shelter_demo_tags == ["seniors"]
+        is_seniors_only = shelter_age == ["seniors"]
         if is_seniors_only and age < 55:
             return False, f"age {age} < 55 for seniors-only shelter"
 
-        is_tay_only = shelter_demo_tags == ["tay_teen"]
+        is_tay_only = shelter_age == ["tay_teen"]
         if is_tay_only and age > 24:
             return False, f"age {age} > 24 for TAY-only shelter"
 
@@ -646,4 +681,5 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         print(f"Error running shelter_matching_backend: {exc}", file=sys.stderr)
+
         raise
